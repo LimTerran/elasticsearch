@@ -28,7 +28,6 @@ import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.MatchNoDocsQuery;
 import org.apache.lucene.search.Query;
 import org.elasticsearch.Version;
-import org.elasticsearch.common.geo.GeoShapeType;
 import org.elasticsearch.common.geo.ShapeRelation;
 import org.elasticsearch.geometry.Circle;
 import org.elasticsearch.geometry.Geometry;
@@ -40,14 +39,14 @@ import org.elasticsearch.geometry.MultiPoint;
 import org.elasticsearch.geometry.MultiPolygon;
 import org.elasticsearch.geometry.Point;
 import org.elasticsearch.geometry.Rectangle;
-import org.elasticsearch.index.mapper.AbstractGeometryFieldMapper;
+import org.elasticsearch.index.mapper.AbstractSearchableGeometryFieldType;
 import org.elasticsearch.index.mapper.GeoShapeFieldMapper;
 import org.elasticsearch.index.mapper.GeoShapeIndexer;
 import org.elasticsearch.index.mapper.MappedFieldType;
 
 import static org.elasticsearch.index.mapper.GeoShapeIndexer.toLucenePolygon;
 
-public class VectorGeoShapeQueryProcessor implements AbstractGeometryFieldMapper.QueryProcessor {
+public class VectorGeoShapeQueryProcessor implements AbstractSearchableGeometryFieldType.QueryProcessor {
 
     @Override
     public Query process(Geometry shape, String fieldName, ShapeRelation relation, QueryShardContext context) {
@@ -60,7 +59,8 @@ public class VectorGeoShapeQueryProcessor implements AbstractGeometryFieldMapper
         return getVectorQueryFromShape(shape, fieldName, relation, context);
     }
 
-    protected Query getVectorQueryFromShape(Geometry queryShape, String fieldName, ShapeRelation relation, QueryShardContext context) {
+    protected Query getVectorQueryFromShape(
+        Geometry queryShape, String fieldName, ShapeRelation relation, QueryShardContext context) {
         GeoShapeIndexer geometryIndexer = new GeoShapeIndexer(true, fieldName);
 
         Geometry processedShape = geometryIndexer.prepareForIndexing(queryShape);
@@ -86,7 +86,7 @@ public class VectorGeoShapeQueryProcessor implements AbstractGeometryFieldMapper
 
         @Override
         public Query visit(Circle circle) {
-            throw new QueryShardException(context, "Field [" + fieldName + "] found and unknown shape Circle");
+            throw new QueryShardException(context, "Field [" + fieldName + "] found an unknown shape Circle");
         }
 
         @Override
@@ -106,13 +106,7 @@ public class VectorGeoShapeQueryProcessor implements AbstractGeometryFieldMapper
                 occur = BooleanClause.Occur.SHOULD;
             }
             for (Geometry shape : collection) {
-                if (shape instanceof MultiPoint) {
-                    // Flatten multi-points
-                    // We do not support multi-point queries?
-                    visit(bqb, (GeometryCollection<?>) shape);
-                } else {
-                    bqb.add(shape.visit(this), occur);
-                }
+                bqb.add(shape.visit(this), occur);
             }
         }
 
@@ -124,7 +118,7 @@ public class VectorGeoShapeQueryProcessor implements AbstractGeometryFieldMapper
 
         @Override
         public Query visit(LinearRing ring) {
-            throw new QueryShardException(context, "Field [" + fieldName + "] found and unsupported shape LinearRing");
+            throw new QueryShardException(context, "Field [" + fieldName + "] found an unsupported shape LinearRing");
         }
 
         @Override
@@ -139,8 +133,11 @@ public class VectorGeoShapeQueryProcessor implements AbstractGeometryFieldMapper
 
         @Override
         public Query visit(MultiPoint multiPoint) {
-            throw new QueryShardException(context, "Field [" + fieldName + "] does not support " + GeoShapeType.MULTIPOINT +
-                " queries");
+            double[][] points = new double[multiPoint.size()][2];
+            for (int i = 0; i < multiPoint.size(); i++) {
+                points[i] = new double[] {multiPoint.get(i).getLat(), multiPoint.get(i).getLon()};
+            }
+            return LatLonShape.newPointQuery(fieldName, relation.getLuceneRelation(), points);
         }
 
         @Override
@@ -161,8 +158,8 @@ public class VectorGeoShapeQueryProcessor implements AbstractGeometryFieldMapper
                 // intersects is more efficient.
                 luceneRelation = ShapeField.QueryRelation.INTERSECTS;
             }
-            return LatLonShape.newBoxQuery(fieldName, luceneRelation,
-                point.getY(), point.getY(), point.getX(), point.getX());
+            return LatLonShape.newPointQuery(fieldName, luceneRelation,
+                new double[] {point.getY(), point.getX()});
         }
 
         @Override

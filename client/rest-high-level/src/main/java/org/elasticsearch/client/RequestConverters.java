@@ -275,22 +275,15 @@ final class RequestConverters {
         return request;
     }
 
-    static Request sourceExists(GetRequest getRequest) {
-        Params parameters = new Params();
-        parameters.withPreference(getRequest.preference());
-        parameters.withRouting(getRequest.routing());
-        parameters.withRefresh(getRequest.refresh());
-        parameters.withRealtime(getRequest.realtime());
-        parameters.withFetchSourceContext(getRequest.fetchSourceContext());
-        // Version params are not currently supported by the _source API so are not passed
-
-        String endpoint = endpoint(getRequest.index(), "_source", getRequest.id());
-        Request request = new Request(HttpHead.METHOD_NAME, endpoint);
-        request.addParameters(parameters.asMap());
-        return request;
+    static Request sourceExists(GetSourceRequest getSourceRequest) {
+        return sourceRequest(getSourceRequest, HttpHead.METHOD_NAME);
     }
 
     static Request getSource(GetSourceRequest getSourceRequest) {
+        return sourceRequest(getSourceRequest, HttpGet.METHOD_NAME);
+    }
+
+    private static Request sourceRequest(GetSourceRequest getSourceRequest, String httpMethodName) {
         Params parameters = new Params();
         parameters.withPreference(getSourceRequest.preference());
         parameters.withRouting(getSourceRequest.routing());
@@ -299,7 +292,7 @@ final class RequestConverters {
         parameters.withFetchSourceContext(getSourceRequest.fetchSourceContext());
 
         String endpoint = endpoint(getSourceRequest.index(), "_source", getSourceRequest.id());
-        Request request = new Request(HttpGet.METHOD_NAME, endpoint);
+        Request request = new Request(httpMethodName, endpoint);
         request.addParameters(parameters.asMap());
         return request;
     }
@@ -417,6 +410,8 @@ final class RequestConverters {
         params.withIndicesOptions(searchRequest.indicesOptions());
         params.putParam("search_type", searchRequest.searchType().name().toLowerCase(Locale.ROOT));
         params.putParam("ccs_minimize_roundtrips", Boolean.toString(searchRequest.isCcsMinimizeRoundtrips()));
+        params.putParam("pre_filter_shard_size", Integer.toString(searchRequest.getPreFilterShardSize()));
+        params.putParam("max_concurrent_shard_requests", Integer.toString(searchRequest.getMaxConcurrentShardRequests()));
         if (searchRequest.requestCache() != null) {
             params.putParam("request_cache", Boolean.toString(searchRequest.requestCache()));
         }
@@ -705,7 +700,6 @@ final class RequestConverters {
         Params params = new Params();
         params.withRouting(tvrequest.getRouting());
         params.withPreference(tvrequest.getPreference());
-        params.withFields(tvrequest.getFields());
         params.withRealtime(tvrequest.getRealtime());
         request.addParameters(params.asMap());
         request.setEntity(createEntity(tvrequest, REQUEST_BODY_CONTENT_TYPE));
@@ -921,6 +915,10 @@ final class RequestConverters {
         }
 
         Params withSlices(int slices) {
+            if (slices == 0) {
+                // translate to "auto" value in rest request so the receiving end doesn't throw error
+                return putParam("slices", AbstractBulkByScrollRequest.AUTO_SLICES_VALUE);
+            }
             return putParam("slices", String.valueOf(slices));
         }
 

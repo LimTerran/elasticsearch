@@ -707,7 +707,7 @@ Defaults to 100.
 end::scroll_size[]
 
 tag::search_timeout[]
-`search_timeout`::
+`timeout`::
 (Optional, <<time-units, time units>>)
 Explicit timeout for each search request.
 Defaults to no timeout.
@@ -922,7 +922,7 @@ end::segment-version[]
 tag::version_type[]
 `version_type`::
 (Optional, enum) Specific version type: `internal`, `external`,
-`external_gte`, `force`.
+`external_gte`.
 end::version_type[]
 
 tag::wait_for_active_shards[]
